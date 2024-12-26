@@ -1,0 +1,298 @@
+\documentclass{article}
+%\VignetteEngine{knitr::knitr}
+%\VignetteIndexEntry{cate vignette}
+
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[authoryear]{natbib}
+\usepackage[unicode=true,pdfusetitle,
+ bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+ breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+ {hyperref}
+\hypersetup{
+ pdfstartview={XYZ null null 1}}
+ \usepackage{authblk}
+
+\begin{filecontents*}{ref.bib}
+@article{wang2015confounder,
+title = {Confounder adjustment in multiple testing},
+author = {Wang, Jingshu and Zhao, Qingyuan and Hastie, Trevor and Owen, Art B.},
+journal = {Annals of Statistics},
+volume = {45},
+number = {5},
+pages = {1863--1894},
+year = {2017}
+}
+@article{leek2008,
+  title={A general framework for multiple testing dependence},
+        author={Leek, Jeffrey T and Storey, John D},
+        journal={Proceedings of the National Academy of Sciences},
+        volume={105},
+        number={48},
+        pages={18718--18723},
+        year={2008},
+        publisher={National Acad Sciences}
+}
+@article{sun2012,
+  title={Multiple hypothesis testing adjusted for latent variables, with an application to the agemap gene expression data},
+        author={Sun, Yunting and Zhang, Nancy R and Owen, Art B},
+        journal={The Annals of Applied Statistics},
+        volume={6},
+        number={4},
+        pages={1664--1688},
+        year={2012},
+        publisher={Institute of Mathematical Statistics}
+}
+@article{bai2012,
+  title={Statistical analysis of factor models of high dimension},
+        author={Bai, Jushan and Li, Kunpeng},
+        journal={The Annals of Statistics},
+        volume={40},
+        number={1},
+        pages={436--465},
+        year={2012},
+        publisher={Institute of Mathematical Statistics}
+}
+@article{bai2012approximate,
+  title={Maximum likelihood estimation and inference for approximate factor models of high dimension},
+        author={Bai, Jushan and Li, Kunpeng},
+        journal = {The Review of Economics and Statistics},
+        year={2015},
+        volume={to appear}
+}
+@article{vawter2004,
+  title={Gender-specific gene expression in post-mortem human brain: localization to sex chromosomes},
+        author={Vawter, Marquis P and Evans, Simon and Choudary, Prabhakara and Tomita, Hiroaki and Meador-Woodruff, Jim and Molnar, Margherita and Li, Jun and Lopez, Juan F and Myers, Rick and Cox, David and others},
+        journal={Neuropsychopharmacology},
+        volume={29},
+        number={2},
+        pages={373-384},
+        year={2004},
+        publisher={NIH Public Access}
+}
+@article{gagnon2012,
+  title={Using control genes to correct for unwanted variation in microarray data},
+        author={Gagnon-Bartsch, Johann A and Speed, Terence P},
+        journal={Biostatistics},
+        volume={13},
+        number={3},
+        pages={539--552},
+        year={2012},
+        publisher={Biometrika Trust}
+}
+@article{onatski2010determining,
+  title={Determining the number of factors from empirical distribution of eigenvalues},
+  author={Onatski, Alexei},
+  journal={The Review of Economics and Statistics},
+  volume={92},
+  number={4},
+  pages={1004--1016},
+  year={2010},
+  publisher={MIT Press}
+}
+@article{wang2015bcv,
+title = {Bi-cross-validation for factor analysis},
+author = {Owen, Art B. and Wang, Jingshu},
+journal = {Statistical Science},
+year = {2016},
+volume = {31},
+number = {1}
+}
+\end{filecontents*}
+
+\begin{document}
+
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+# set global chunk options
+opts_chunk$set(fig.path='figure/cate-', fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+Sys.setenv(RSTUDIO_PDFLATEX = "/Library/TeX/texbin/latexmk")
+@
+
+
+\title{The \texttt{CATE} Package for High Dimensional Factor Analysis and Confounder Adjusted Multiple Testing}
+
+\author{Jingshu Wang}
+\author{Qingyuan Zhao}
+\affil{Department of Statistics, Stanford University \\ \{jingshuw,qyzhao\}@stanford.edu}
+
+\date{October 4, 2015}
+\maketitle
+
+In this document, we demonstrate how to use the R package \href{https://cran.r-project.org/web/packages/cate/index.html}{\texttt{cate}} to adjust for confounding effects in multiple hypothesis testing. Users who are only interested in high dimensional factor analysis may skip the motivating example and go to Section \ref{sec:factor}.
+
+\section{Introduction}
+\label{sec:intro}
+
+The dataset we will be using is a genome-wide association study of gender \citep{vawter2004}. In this study, samples were taken postmortem from the brains of 10 individuals, 5 men and 5 women. Three
+samples were taken from different regions of the brain of each individual, and one aliquot of each sample was sent to each of 3 laboratories for analysis. There were two different microarray platforms used by these labs. The dataset was downloaded from \href{http://www-personal.umich.edu/~johanngb/ruv/}.
+
+First, let's load the data.
+<<load>>=
+library(cate)
+data(gender.sm)
+names(gender.sm)
+cbind(X = dim(gender.sm$X), Y = dim(gender.sm$Y), Z = dim(gender.sm$Z)) # matrix dimensions
+@
+
+There are in total $84$ samples and $500$ genes in this dataset. There are $12600$ genes measured in the original dataset \citep{vawter2004,gagnon2012} and here we look at a $500$ sub-sample. There should have been $10 \times 3 \times 3 = 90$ samples in total, but $6$ of them are missing. In the data object \texttt{gender.sm}, \texttt{X} is the gender of each person, \texttt{Y} is the gene expression matrix, and \texttt{Z} includes the batch labels (lab and microarray platform, not individual or brain region).
+
+Since there are several batch variables and unmeasured covariates in this dataset, it should come as no surprise that these confounders can seriously bias the association tests. In other words, the marginal effects of $X$ on $Y$ may be different from the actual effects of $X$ on $Y$. \citet{wang2015confounder} describe a general framework and a two-step solution for this problem. In the first step, we apply factor analysis to the part of gene expression matrix $Y$ that is unrelated to the variable(s) of interest $X$. In the second step, we correct the marginal effects of $X$ on $Y$ by using the factors obtained in the first step.
+
+
+\section{Confounder adjusted multiple testing}
+\label{sec:cate}
+
+To illustrate how the confounders in the \texttt{gender.sm} dataset can bias the association tests, we first run the two-sample t-test for each gene
+<<two-sample-t,cache=TRUE>>==
+t.stats <- apply(gender.sm$Y, 2, function(y, x) t.test(y~x)$statistic, gender.sm$X)
+@
+Under the null hypothesis that the gene is unrelated to the gender,
+the corresponding t-statistic is expected to follow a t-distribution
+with $n-1$ degrees of freedom. Since $n=84$ is fairly large in this
+study, this t-distribution is very close to the standard normal
+distribution $\mathrm{N}(0,1)$. However, the empirical distribution of
+\texttt{t.stats} is shown in Figure \ref{fig:two-sample-t-hist} (code
+not echoed). It clearly departs from the theoretical null distribution. The median absolute deviation (MAD) of this histogram is only $0.066$, much less than the theoretical value $1$, i.e.\ the t-statistics are extremely underdispersed. The histogram is also a little skewed compared to normal or t distribution.
+<<two-sample-t-hist, warning=F, fig.width=8, fig.height=2.5, echo=FALSE, fig.cap="Histogram of t-statistics before confounder adjustment">>==
+library(ggplot2)
+hist.t.stats <- ggplot() + aes(x = t.stats, y = ..density..) + geom_histogram(binwidth = 0.05 / 2, colour = "black", fill = "white") + xlim(c(-1, 1)) + geom_line(aes(x = seq(-1, 1, 0.01), y = dnorm(seq(-1, 1, 0.01), median(t.stats), mad(t.stats))), col = "violetred3", size = 1) + geom_text(aes(x = 0.5, y = 5, label = paste0("N(", signif(median(t.stats), 2),",", signif(mad(t.stats), 2), "^2)")), col = "violetred3", show.legend= FALSE, size = 3) + xlab("t-statistics") + ylab("density") + theme_bw(base_size = 10)
+hist.t.stats
+@
+
+As mentioned earlier, this phenomenon is most likely due to the existence of \textbf{confounders}, unmeasured variables that are correlated with both the response $Y$ and the variable of interest $X$. To correct for such confounders, we first need to estimate its number. This is implemented in the function \texttt{est.confounder.num}
+<<set-seed, include=FALSE>>==
+set.seed(1)
+@
+<<est-confounder-num,cache=TRUE>>==
+n <- nrow(gender.sm$Y) # number of samples
+gender.data <- data.frame(gender = gender.sm$X, gender.sm$Z)
+factor.num <- est.confounder.num(~ gender | . - gender + 0,
+                                 gender.data, gender.sm$Y,
+                                 method = "bcv", bcv.plot = FALSE,
+                                 rmax = 30, nRepeat = 20)
+factor.num$r
+@
+By default, \texttt{est.confounder.num} uses \texttt{method = "bcv"}, which calls the \texttt{EsaBcv} function in the \href{https://cran.r-project.org/web/packages/esaBcv/index.html}{\texttt{esaBcv}} package to estimate the number of factors by bi-cross-validation (BCV). To look at the curve of BCV error using different number of factors, the user can turn on the \texttt{bcv.plot} argument. It is recommended to use at least $20$ for \texttt{nRepeat} to obtain a stable BCV error for \texttt{n} around a few hundreds or less.
+
+Another method to estimate the number of confounders of is the eigenvalue difference method \citep{onatski2010determining}
+<<>>==
+est.confounder.num(~ gender | . - gender + 0,
+                   gender.data, gender.sm$Y, method = "ed")
+@
+The formula "~ gender | . - gender + 0" here means gender is the primary variable and all other variables in \texttt{gender.data} are nuisance variables. The intercept is not included because it is already included in \texttt{gender.data}.
+The \texttt{"bcv"} method is better at estimating weak factors but takes longer time than \texttt{"ed"}. We recommend to use \texttt{"bcv"} method for most datasets; see \citet{wang2015bcv} for more detail.
+
+After finding the number of factors, the user can call the main \texttt{cate} function to adjust for the confounders
+<<cate>>==
+cate.results <- cate(~ gender | . - gender + 0,
+                     gender.data, gender.sm$Y, r = factor.num$r)
+names(cate.results)
+@
+For most users, the interesting returned values are
+\begin{description}
+\item[\texttt{beta}:] the estimated effects after adjustment;
+\item[\texttt{beta.t}:] the t-statistics after adjustment;
+\item[\texttt{beta.p.value}:] the p-values of the estimated effects;
+\item[\texttt{alpha.p.value}:] the p-value of a $\chi^2$-test for confounding.
+\end{description}
+
+The first thing to look at is perhaps the confounding test, whose null hypothesis is that the estimated factors are not correlated with $X$ so the individual association tests are not biased. For the gender dataset, the p-value of this test is
+<<confounding-test>>==
+cate.results$alpha.p.value
+@
+This is much smaller than $0.05$, which indicates, together with the previous histogram, that there are some confounders in the experiment. When this is the case, the user may want to look at the factor analysis results to search for possible sources of confounding (in particular the loadings \texttt{Gamma} and the estimated confounders \texttt{Z} returned by \texttt{cate}).
+
+To discover candidate genes, the user can apply the \texttt{p.adjust} function in the \texttt{stats} package to control certain multiple testing error. For controlling the family-wise error rate (FWER), the user may use the \texttt{bonferroni} or \texttt{holm} option in \texttt{p.adjust}. To increase the number of findings and still control the false discovery rate (FDR), the user may use the \texttt{BH} option. Here are a couple of examples:
+<<candidates, eval=FALSE>>==
+which(p.adjust(cate.results$beta.p.value, "bonferroni") < 0.05) # control FWER at 0.05
+which(p.adjust(cate.results$beta.p.value, "BH") < 0.2) # control FDR at 0.2
+@
+
+Finally, let's review all the available options in \texttt{cate}.
+<<cate-arg>>==
+args(cate)
+@
+Here are some detailed descriptions of all the arguments
+\begin{description}
+\item[\texttt{formula}:] R formula indicating primary and nuisance predictors, which are separated by "|". Example: \texttt{formula = \textasciitilde treatment | batch.label}.
+\item[\texttt{Y}:] response matrix (e.g.\ gene expression).
+\item[\texttt{X.data}:] a data frame including both primary treatment variables whose effects are of interest and nuisance covariates to adjust for (for example the known batch variables and other demographics variables such as age or gender). \texttt{X} can also be a formula starting with \texttt{~}.
+\item[\texttt{primary.var.names}] a vector of strings indicating the names of the primary treatment variables, or an integer vector indicating the columns of the primary treatment variables in \texttt{X} when \texttt{X} is a matrix or data frame. If \texttt{primary.var.names} is a vector of string, then the names should match the column names of \texttt{X} or \texttt{X.data}.
+\item[\texttt{r}:] number of confounders, usually estimated by \texttt{est.confounder.num}.
+\item[\texttt{fa.method}:] method used to estimate the confounders. See Section \ref{sec:factor} for more detail.
+\item[\texttt{adj.method}:] method used to adjust for the confounders. There are two main approaches: robust regression (\texttt{rr}) and negative control (\texttt{nc}). If a fair amount (rule of thumb: $\ge 30$) of negative control genes (e.g. spike-in controls) are available, it is recommended to use the \texttt{nc} option. Housekeeping genes can also be used as negative controls, but they are not as reliable as spike-in controls. The robust regression (\texttt{rr}) option assumes the true effects are sparse and can be used when negative controls are not available.
+\item[\texttt{psi}:] estimating equation function used when \texttt{adj.method = "rr"}. See the \texttt{rlm} function in package \texttt{MASS} for more detail.
+\item[\texttt{nc}:] positions of the negative controls. Can be a vector of numbers between $1$ and $p$, or a logical vector of length $p$.
+\item[\texttt{nc.var.correction}:] if \texttt{TRUE} (default and recommended), use the variance correction formula in \citet{wang2015confounder} when \texttt{adj.method = "nc"}; if \texttt{FALSE}, use the oracle variance (same as the \texttt{RUV4} function in package \texttt{ruv}). See \citet{wang2015confounder} for more detail.
+\item[\texttt{calibrate}:] if \texttt{TRUE} (default), scale the t-statistics \texttt{beta.t} to have median equal to $0$ and median absolute deviation (with respect to normal distribution) equal to $1$ .
+\end{description}
+
+For example, to use the \texttt{nc} adjustment method, the user must specify the positions of negative control genes. In the dataset \texttt{gender.sm}, these are given in \texttt{spikectl} ($33$ spike-in controls) and \texttt{hkctl} (799 housekeeping genes). Here is a sample usage:
+<<cate-nc>>==
+cate.results.nc <- cate(~ gender | . - gender + 0,
+                        gender.data, gender.sm$Y, r = factor.num$r,
+                        adj.method = "nc", nc = gender.sm$spikectl)
+@
+The housekeeping genes are usually less reliable than the spike-in controls.
+
+Alternatively, \texttt{cate.fit} provides a non-formula interface for the same purpose. To use \texttt{cate.fit}, the user needs to specify
+\begin{description}
+\item[\texttt{X.primary}:] primary treatment variable(s) whose effects are of interest. These are the variables that come before "|" in the \texttt{formula} in \texttt{cate}.
+\item[\texttt{X.nuis}:] nuisance covariate(s) to include in the regression whose effects are not of interest. These are the variables that come after "|" in the \texttt{formula} in \texttt{cate}.
+\item[\texttt{Y}:] response matrix (e.g.\ gene expression).
+\end{description}
+All the other arguments are the same as \texttt{cate}.
+
+We end this section with Figure \ref{fig:t-hist-after}, two histograms of \texttt{beta.t} after the confounder adjustment using \texttt{adj.method = "rr"} and \texttt{adj.method = "nc"}. In both cases, the bulk of the statistics approximately follows the standard normal distribution.
+<<t-hist-after, warning=F, fig.height=5, fig.width=8, fig.cap="Histograms of test statistics after adjustment", echo=FALSE>>=
+t.stats <- as.vector(cate.results$beta.t)
+hist.t.stats.after <- ggplot() + aes(x = t.stats, y = ..density..) + geom_histogram(binwidth = 0.1, colour = "black", fill = "white") + xlim(c(-4, 4)) + geom_line(aes(x = seq(-4, 4, 0.01), y = dnorm(seq(-4, 4, 0.01), median(t.stats), mad(t.stats))), col = "violetred3", size = 1) + geom_text(aes(x = 2, y = 0.3, label = paste0("N(0,1)")), col = "violetred3", show_guide= FALSE, size = 3) + xlab("t-statistics") + ylab("density") + theme_bw(base_size = 10) + ggtitle("Adjusted by Robust Regression")
+t.stats.nc <- as.vector(cate.results.nc$beta.t)
+hist.t.stats.after.nc <- ggplot() + aes(x = t.stats.nc, y = ..density..) + geom_histogram(binwidth = 0.1, colour = "black", fill = "white") + xlim(c(-4, 4)) + geom_line(aes(x = seq(-4, 4, 0.01), y = dnorm(seq(-4, 4, 0.01), median(t.stats.nc), mad(t.stats.nc))), col = "violetred3", size = 1) + geom_text(aes(x = 2, y = 0.3, label = paste0("N(0,1)")), col = "violetred3", show_guide= FALSE, size = 3) + xlab("t-statistics") + ylab("density") + theme_bw(base_size = 10) + ggtitle("Adjusted by Negative Control")
+library(gridExtra)
+grid.arrange(hist.t.stats.after, hist.t.stats.after.nc)
+@
+
+
+
+\section{Other available confounder adjustment methods on CRAN/Bioconductor}
+
+The preprocessed \texttt{gender.sm} dataset was first used by \citet{gagnon2012} to demonstrate their confounder correction method "Remove Unwanted Variation" (RUV) using negative controls. See also the R package \href{https://cran.r-project.org/web/packages/ruv/index.html}{\texttt{ruv}}. The \texttt{RUV4} function therein is very similar to the \texttt{adj.method = "nc"} option in \texttt{cate}. Two other related packages are \href{https://www.bioconductor.org/packages/release/bioc/html/sva.html}{\texttt{sva}} \citep{leek2008} and \href{https://cran.r-project.org/web/packages/leapp/index.html}{\texttt{leapp}} \citep{sun2012}, which motivate the robust regression method (\texttt{adj.method = "rr"}) in \texttt{cate}.
+
+To compare the performance of different methods, the user can use the wrapper functions \texttt{sva.wrapper}, \texttt{ruv.wrapper}, \texttt{leapp.wrapper} in the \texttt{cate} package. They provide a uniform interface and call the corresponding functions in the original packages.
+
+\section{Factor analysis}
+\label{sec:factor}
+
+For a data matrix $Y \in \mathbb{R}^{n \times p}$, $n$ being the number of observations and $p$ being the number of variables (e.g.\ genes), the factor model assumes
+\[
+Y_{n \times p} = Z_{n \times r} \Gamma_{p \times r}^T + E_{n \times p},
+\]
+where $Z$ is a rotation matrix containing latent factors, $\Gamma$ is a matrix of loadings and $E$ is a noise matrix. The columns of $E$ have covariance matrix $\Sigma$.
+
+To perform factor analysis, one simply calls the function \texttt{factor.analysis} with the data matrix and number of factors:
+<<fa-demo>>=
+mle <- factor.analysis(gender.sm$Y, r = 5)
+names(mle)
+@
+By default, \texttt{factor.analysis} estimates the latent factors by maximum likelihood (\texttt{method = "ml"}). Other available algorithms are principal component analysis (\texttt{method = "pc"}) and bi-convex optimization via early stopping alternation (\texttt{method = "esa"}). The default maximum likelihood estimator has good theoretical properties under heteroscedastic noise variance $\Sigma$ \citep{bai2012} or approximate factor model \citep{bai2012approximate}. The \texttt{esa} method tries to minimize the prediction error for $Y$; for more details we refer the readers to the R package \href{https://cran.r-project.org/web/packages/esaBcv}{esaBcv}. The \texttt{pc} option is usually more desirable when the noise variance is homoscedastic $\Sigma = \sigma^2 I_p$. Finally, using the \texttt{pc} method will always outputs the same results, but the iterative procedures \texttt{ml} and \texttt{esa} may converge to different values depending on the initial point.
+
+The \texttt{factor.analysis} function can work for any $n$ and $p$. In contrasts, both the \texttt{factanal} function in package \texttt{stats} and the \texttt{fa} function in package \href{https://cran.r-project.org/web/packages/psych/index.html}{\texttt{psych}} do not support the high dimensional problem where $p > n$.
+
+\section*{Acknowledgement}
+
+We would like to thank Laurel Stell for her feedback on the software
+which prompted the version 1.1.
+
+\bibliographystyle{chicago}
+\bibliography{ref}
+
+\end{document}

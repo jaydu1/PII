@@ -1,0 +1,23 @@
+name: bci
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.8
+  - pip
+  - h5py
+
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - statsmodels
+  
+  - tqdm
+  - joblib
+
+  - seaborn
+  - matplotlib
+  
+  - pip:
+      - sklearn_ensemble_cv
