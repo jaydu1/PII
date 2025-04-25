@@ -7,14 +7,14 @@ This repository contains the reproducibility materials for post-integrated infer
 
 ## Simulation
 
-- `ex1-simu-PSI.py`: Simulation.
+- `ex1-simu-PII.py`: Simulation.
 - `ex2-simu_conv_rate.py`: Evaluate the convergence rate in simulation.
 - `Plot-simu.ipynb`: Plot the results of simulation.
 
 ## Real data
 
 - `data/LUHMES.h5`: Preprocessed LUHMES data can be obtained from [[Du2024a]](https://github.com/jaydu1/CausalMultiOutcomes/blob/main/data/LUHMES/LUHMES.h5) and stored to this folder.
-- `ex3-LUHMES_PSI.py`: Apply PSI to the LUHMES data.
+- `ex3-LUHMES_PII.py`: Apply PII to the LUHMES data.
 - `ex4-LUHMES_RUV.R`: Apply RUV and CATE to the LUHMES data.
 - `Plot-LUHMES.ipynb`: Plot the results of real data and save common discoveries for GO analysis.
 - `ex3-GO.R`: GO analysis of results.
